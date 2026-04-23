@@ -1,3 +1,4 @@
+/** Session payload; keep stable so existing browsers stay signed in. */
 export const ADMIN_STORAGE_KEY = "admin";
 
 export type AdminRole = "admin" | "super_admin";
@@ -25,13 +26,19 @@ export function parseAdminSession(raw: string | null): AdminSession | null {
 }
 
 export function readAdminFromStorage(): AdminSession | null {
-  return parseAdminSession(localStorage.getItem(ADMIN_STORAGE_KEY));
+  return (
+    parseAdminSession(localStorage.getItem(ADMIN_STORAGE_KEY)) ??
+    parseAdminSession(sessionStorage.getItem(ADMIN_STORAGE_KEY))
+  );
 }
 
-export function writeAdminToStorage(admin: AdminSession): void {
-  localStorage.setItem(ADMIN_STORAGE_KEY, JSON.stringify(admin));
+export function writeAdminToStorage(admin: AdminSession, persist: boolean): void {
+  clearAdminStorage();
+  const target = persist ? localStorage : sessionStorage;
+  target.setItem(ADMIN_STORAGE_KEY, JSON.stringify(admin));
 }
 
 export function clearAdminStorage(): void {
   localStorage.removeItem(ADMIN_STORAGE_KEY);
+  sessionStorage.removeItem(ADMIN_STORAGE_KEY);
 }

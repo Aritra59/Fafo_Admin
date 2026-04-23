@@ -25,6 +25,12 @@ export const COLLECTIONS = {
   billing: "billing",
   billingLogs: "billingLogs",
   settings: "settings",
+  /** Seller app promos / banners */
+  ads: "ads",
+  /** impression + click events (kind field) */
+  adClicks: "adClicks",
+  /** Seller menu groups (Breakfast, Lunch, …) + product ids */
+  menus: "menus",
 };
 
 export const SETTINGS_GLOBAL_ID = "global";
@@ -239,6 +245,32 @@ export function shopCodePrefixFromShopName(shopName) {
 /**
  * @param {string} [shopName] Used to derive prefix; uniqueness checked in Firestore.
  */
+/**
+ * @param {string} code
+ * @param {string} [excludeSellerId] seller doc id to ignore (editing same seller)
+ * @returns {Promise<boolean>} true if another seller already uses this code
+ */
+export async function isShopCodeTaken(code, excludeSellerId) {
+  const c = String(code ?? "")
+    .trim()
+    .toUpperCase();
+  if (!c) return false;
+  const q = query(collection(db, COLLECTIONS.sellers), where("shopCode", "==", c), limit(5));
+  const snap = await getDocs(q);
+  for (const d of snap.docs) {
+    if (excludeSellerId && d.id === excludeSellerId) continue;
+    return true;
+  }
+  return false;
+}
+
+/** Admin-facing subscription gate: ACTIVE / EXPIRED / BLOCKED */
+export function sellerBillingAccessLabel(seller) {
+  if (seller?.isBlocked) return "BLOCKED";
+  if (seller?.sellingEnabled === false) return "EXPIRED";
+  return "ACTIVE";
+}
+
 export async function generateUniqueShopCode(shopName) {
   const prefix = shopCodePrefixFromShopName(shopName);
   const maxAttempts = 80;

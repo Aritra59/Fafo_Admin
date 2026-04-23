@@ -9,6 +9,7 @@ const links: { to: string; label: string; end?: boolean }[] = [
   { to: "orders", label: "Orders" },
   { to: "billing", label: "Billing / Slots" },
   { to: "analytics", label: "Analytics" },
+  { to: "ads", label: "Ads management" },
   { to: "storage", label: "Storage" },
   { to: "templates", label: "Templates" },
   { to: "settings", label: "Settings" },

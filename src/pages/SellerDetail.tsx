@@ -29,14 +29,19 @@ import {
   isOrderCancelled,
   isOrderCompleted,
   isOrderPending,
+  isShopCodeTaken,
   isTrialActive,
+  sellerBillingAccessLabel,
   sellerUiState,
   toCsvRow,
   tsToDate,
 } from "../services/adminFirestore";
+import { LocationMapPicker, type MapLocationValue } from "../components/admin/LocationMapPicker";
+import { SellerMenusPanel } from "../components/admin/SellerMenusPanel";
+import { SellerProductsPanel } from "../components/admin/SellerProductsPanel";
 import { formatMoney, formatDate, summarizeItems, waLink, waMessageLink } from "../lib/format";
 import { orderTimeMs } from "../lib/orderTime";
-import type { Order, OrderItem, Seller } from "../types/models";
+import type { BillingPlanType, Order, OrderItem, Seller } from "../types/models";
 
 function itemLabel(it: OrderItem): string {
   return String(it.name ?? it.title ?? "Item");
@@ -61,6 +66,12 @@ export function SellerDetail() {
   const [ovFee, setOvFee] = useState("");
   const [ovPresetsJson, setOvPresetsJson] = useState("[]");
   const [resetShopCodeOpen, setResetShopCodeOpen] = useState(false);
+  const [mapOpen, setMapOpen] = useState(false);
+  const [mapDraft, setMapDraft] = useState<MapLocationValue | null>(null);
+  const [trialModal, setTrialModal] = useState(false);
+  const [trialStartInput, setTrialStartInput] = useState("");
+  const [trialEndInput, setTrialEndInput] = useState("");
+  const [resetStoreOpen, setResetStoreOpen] = useState(false);
 
   useEffect(() => {
     if (!seller) return;
@@ -100,19 +111,32 @@ export function SellerDetail() {
     let cancelled = 0;
     let revenue = 0;
     let todayRev = 0;
+    let revLast30 = 0;
+    let revPrev30 = 0;
+    let ordersLast30 = 0;
     const startOfToday = new Date();
     startOfToday.setHours(0, 0, 0, 0);
+    const now = Date.now();
+    const ms30 = 30 * 86400000;
     const productCounts = new Map<string, number>();
     const buyerCounts = new Map<string, number>();
 
     for (const o of list) {
       if (isOrderPending(o.status)) pending += 1;
+      const t = tsToDate(o.createdAt as never);
+      const tms = t ? t.getTime() : 0;
       if (isOrderCompleted(o.status)) {
         completed += 1;
         const amt = Number(o.total ?? 0);
         revenue += amt;
-        const t = tsToDate(o.createdAt as never);
         if (t && t >= startOfToday) todayRev += amt;
+        if (tms && tms >= now - ms30 && tms <= now) {
+          revLast30 += amt;
+          ordersLast30 += 1;
+        }
+        if (tms && tms >= now - 2 * ms30 && tms < now - ms30) {
+          revPrev30 += amt;
+        }
       }
       if (isOrderCancelled(o.status)) cancelled += 1;
       const bp = (o.buyerPhone ?? "").trim();
@@ -130,7 +154,23 @@ export function SellerDetail() {
 
     const repeatBuyers = [...buyerCounts.entries()].filter(([, n]) => n > 1).length;
 
-    return { pending, completed, cancelled, revenue, todayRev, topProducts, repeatBuyers, orderCount: list.length };
+    const growthPct =
+      revPrev30 > 0 ? ((revLast30 - revPrev30) / revPrev30) * 100 : revLast30 > 0 ? 100 : revPrev30 === 0 && revLast30 === 0 ? 0 : null;
+
+    return {
+      pending,
+      completed,
+      cancelled,
+      revenue,
+      todayRev,
+      revLast30,
+      revPrev30,
+      ordersLast30,
+      growthPct,
+      topProducts,
+      repeatBuyers,
+      orderCount: list.length,
+    };
   }, [orders]);
 
   async function patchSeller(patch: Record<string, unknown>) {
@@ -242,13 +282,13 @@ export function SellerDetail() {
   function shopCodeWhatsAppHref(): string {
     if (!seller) return "#";
     const lines = [
-      "Your shop login details:",
+      "Your FaFo shop is ready:",
       `Shop code: ${seller.shopCode ?? ""}`,
       `Phone: ${seller.phone ?? ""}`,
+      "Open the FaFo seller app and sign in with your shop code.",
     ];
-    if (seller.password) lines.push(`Password: ${seller.password}`);
-    lines.push("Sign in with shop code + password in the seller app.");
-    return waMessageLink(seller.phone, lines.join("\n"));
+    const waPhone = (seller.whatsappNumber ?? seller.phone ?? "").trim();
+    return waMessageLink(waPhone, lines.join("\n"));
   }
 
   async function extendTrial() {
@@ -295,6 +335,23 @@ export function SellerDetail() {
     }
   }
 
+  async function resetStorefront() {
+    if (!sellerId || !seller) return;
+    setBusy(true);
+    try {
+      await deleteSellerProducts(sellerId);
+      await deleteStorageFileIfUrl(seller.shopImageUrl ?? "");
+      await deleteStorageFileIfUrl(seller.qrImageUrl ?? "");
+      await updateDoc(doc(db, COLLECTIONS.sellers, sellerId), {
+        shopImageUrl: deleteField(),
+        qrImageUrl: deleteField(),
+      });
+      setResetStoreOpen(false);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function deleteAllProducts() {
     if (!sellerId) return;
     if (!window.confirm("Delete ALL products for this seller?")) return;
@@ -317,7 +374,7 @@ export function SellerDetail() {
     }
   }
 
-  function saveEdit(e: FormEvent) {
+  async function saveEdit(e: FormEvent) {
     e.preventDefault();
     if (!editField) return;
     const key = editField.key;
@@ -326,9 +383,18 @@ export function SellerDetail() {
       const n = Number(editField.value);
       v = Number.isFinite(n) ? n : undefined;
     }
-    if (key === "password" && typeof v === "string" && !v.trim()) {
-      setEditField(null);
-      return;
+    if (key === "shopCode" && typeof v === "string") {
+      const code = v.trim().toUpperCase();
+      if (!/^[A-Z0-9]{4,12}$/.test(code)) {
+        window.alert("Shop code must be 4–12 letters or numbers.");
+        return;
+      }
+      const taken = await isShopCodeTaken(code, sellerId);
+      if (taken) {
+        window.alert("That shop code is already in use.");
+        return;
+      }
+      v = code;
     }
     if (key === "address" && typeof v === "string") {
       void patchSeller({ address: v, location: v });
@@ -354,13 +420,73 @@ export function SellerDetail() {
     );
   }
 
-  const lat = seller.latitude;
-  const lng = seller.longitude;
-  const lastActive = formatDate(seller.lastActiveAt as never);
-  const trialEnd = formatDate(seller.trialEnd as never);
-  const trialStart = formatDate(seller.trialStart as never);
-  const state = sellerUiState(seller);
+  const cur: Seller = seller;
+
+  const lat = cur.latitude;
+  const lng = cur.longitude;
+  const lastActive = formatDate(cur.lastActiveAt as never);
+  const trialEnd = formatDate(cur.trialEnd as never);
+  const trialStart = formatDate(cur.trialStart as never);
+  const state = sellerUiState(cur);
   const waShopCredentialsUrl = shopCodeWhatsAppHref();
+  const accessLabel = sellerBillingAccessLabel(cur);
+
+  function openMapEditor() {
+    const la = Number(cur.latitude);
+    const ln = Number(cur.longitude);
+    if (Number.isFinite(la) && Number.isFinite(ln)) {
+      setMapDraft({
+        lat: la,
+        lng: ln,
+        address: String(cur.address ?? cur.location ?? ""),
+        city: cur.locationCity,
+        state: cur.locationState,
+      });
+    } else {
+      setMapDraft({ lat: 20.5937, lng: 78.9629, address: "" });
+    }
+    setMapOpen(true);
+  }
+
+  function openTrialEditor() {
+    const fmt = (ts: unknown) => {
+      const d = tsToDate(ts as never);
+      if (!d) return "";
+      const p = (n: number) => String(n).padStart(2, "0");
+      return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+    };
+    setTrialStartInput(fmt(cur.trialStart));
+    setTrialEndInput(fmt(cur.trialEnd));
+    setTrialModal(true);
+  }
+
+  async function saveMapLocation() {
+    if (!sellerId || !mapDraft) return;
+    await patchSeller({
+      latitude: mapDraft.lat,
+      longitude: mapDraft.lng,
+      address: mapDraft.address.trim(),
+      location: mapDraft.address.trim(),
+      locationCity: mapDraft.city?.trim() || deleteField(),
+      locationState: mapDraft.state?.trim() || deleteField(),
+    });
+    setMapOpen(false);
+  }
+
+  async function saveTrialDates() {
+    if (!sellerId) return;
+    const s = new Date(trialStartInput);
+    const en = new Date(trialEndInput);
+    if (Number.isNaN(s.getTime()) || Number.isNaN(en.getTime())) {
+      window.alert("Invalid dates.");
+      return;
+    }
+    await patchSeller({
+      trialStart: Timestamp.fromDate(s),
+      trialEnd: Timestamp.fromDate(en),
+    });
+    setTrialModal(false);
+  }
 
   return (
     <div className="page">
@@ -403,6 +529,10 @@ export function SellerDetail() {
           <div className="kv">
             <div className="kv__k">Phone</div>
             <div className="kv__v">{seller.phone ?? "—"}</div>
+          </div>
+          <div className="kv">
+            <div className="kv__k">WhatsApp</div>
+            <div className="kv__v">{seller.whatsappNumber ?? seller.phone ?? "—"}</div>
           </div>
           <div className="kv">
             <div className="kv__k">Shop name</div>
@@ -514,6 +644,84 @@ export function SellerDetail() {
         </Card>
       </div>
 
+      <Card title="Billing & selling">
+        <div className="kv-grid">
+          <div className="kv">
+            <div className="kv__k">Plan type</div>
+            <div className="kv__v">{seller.billingPlanType ?? "—"}</div>
+          </div>
+          <div className="kv">
+            <div className="kv__k">Trial</div>
+            <div className="kv__v">
+              {isTrialActive(seller) ? (
+                <>
+                  <span className="pill pill--trial">Active</span>
+                  {(() => {
+                    const end = tsToDate(seller.trialEnd as never);
+                    if (!end) return null;
+                    const days = Math.ceil((end.getTime() - Date.now()) / 86400000);
+                    return <span className="muted small"> · {Math.max(0, days)} days left</span>;
+                  })()}
+                </>
+              ) : (
+                <span className="pill pill--muted">Not active</span>
+              )}
+            </div>
+          </div>
+          <div className="kv">
+            <div className="kv__k">Due amount</div>
+            <div className="kv__v">{formatMoney(Number(seller.pendingDues ?? 0))}</div>
+          </div>
+          <div className="kv">
+            <div className="kv__k">Selling</div>
+            <div className="kv__v">{seller.sellingEnabled === false ? "Blocked (unpaid or manual)" : "Allowed"}</div>
+          </div>
+          <div className="kv">
+            <div className="kv__k">Access</div>
+            <div className="kv__v">
+              <span className="pill pill--live">{accessLabel}</span>
+            </div>
+          </div>
+        </div>
+        <div className="btn-row" style={{ marginTop: "0.75rem", flexWrap: "wrap", justifyContent: "flex-start" }}>
+          <Button variant="ghost" disabled={busy} onClick={() => void patchSeller({ sellingEnabled: true, pendingDues: 0 })}>
+            Mark paid — enable selling
+          </Button>
+          <Button variant="ghost" disabled={busy} onClick={() => void patchSeller({ sellingEnabled: false })}>
+            Mark unpaid — disable selling
+          </Button>
+          <label className="field" style={{ margin: 0, minWidth: "140px" }}>
+            <span className="muted small">Pending dues (INR)</span>
+            <input
+              className="input"
+              inputMode="decimal"
+              defaultValue={String(seller.pendingDues ?? 0)}
+              key={`dues-${seller.id}-${seller.pendingDues}`}
+              onBlur={(e) => {
+                const n = Math.max(0, Number(e.target.value) || 0);
+                void patchSeller({ pendingDues: n });
+              }}
+            />
+          </label>
+          <label className="field" style={{ margin: 0, minWidth: "160px" }}>
+            <span className="muted small">Plan</span>
+            <select
+              className="input"
+              value={(seller.billingPlanType as BillingPlanType) ?? "trial"}
+              onChange={(e) => void patchSeller({ billingPlanType: e.target.value })}
+            >
+              <option value="trial">Trial</option>
+              <option value="monthly">Monthly</option>
+              <option value="daily">Daily</option>
+              <option value="slot">Slot-based</option>
+            </select>
+          </label>
+          <Button variant="ghost" disabled={busy} onClick={() => openTrialEditor()}>
+            Edit trial dates
+          </Button>
+        </div>
+      </Card>
+
       <Card title="Profile">
         <div className="kv-grid">
           <div className="kv">
@@ -554,9 +762,12 @@ export function SellerDetail() {
           </Button>
           <Button
             variant="ghost"
-            onClick={() => setEditField({ key: "password", label: "Shop login password", value: seller.password ?? "" })}
+            onClick={() => setEditField({ key: "whatsappNumber", label: "WhatsApp number", value: seller.whatsappNumber ?? seller.phone ?? "" })}
           >
-            Change password
+            WhatsApp number
+          </Button>
+          <Button variant="ghost" onClick={() => setEditField({ key: "shopCode", label: "Shop code", value: seller.shopCode ?? "" })}>
+            Shop code
           </Button>
           <Button
             variant="ghost"
@@ -581,7 +792,7 @@ export function SellerDetail() {
 
       <Card title="Pricing override (optional)">
         <p className="muted small" style={{ marginBottom: "0.75rem" }}>
-          When enabled, seller apps should prefer these values over global settings (<code className="code">settings/global</code>).
+          When enabled, this seller&apos;s app should prefer these values over your global control panel defaults.
         </p>
         <label className="field" style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
           <input type="checkbox" checked={ovEnabled} onChange={(e) => setOvEnabled(e.target.checked)} />
@@ -614,6 +825,11 @@ export function SellerDetail() {
 
       <Card title="Location">
         <p className="muted small">{seller.address ?? seller.location ?? "—"}</p>
+        {(seller.locationCity || seller.locationState) && (
+          <p className="muted small">
+            {[seller.locationCity, seller.locationState].filter(Boolean).join(", ")}
+          </p>
+        )}
         {lat != null && lng != null && Number.isFinite(lat) && Number.isFinite(lng) ? (
           <iframe
             className="map-embed"
@@ -625,6 +841,9 @@ export function SellerDetail() {
           <p className="muted">Add latitude/longitude to enable map preview.</p>
         )}
         <div className="btn-row" style={{ marginTop: "0.5rem" }}>
+          <Button variant="ghost" onClick={() => openMapEditor()}>
+            Pick on map
+          </Button>
           <Button
             variant="ghost"
             onClick={() =>
@@ -651,6 +870,10 @@ export function SellerDetail() {
           </Button>
         </div>
       </Card>
+
+      <SellerMenusPanel sellerId={sellerId} />
+
+      <SellerProductsPanel sellerId={sellerId} />
 
       <Card title="Recent orders">
         <div className="table-wrap">
@@ -686,16 +909,23 @@ export function SellerDetail() {
         </div>
       </Card>
 
-      <Card title="Analytics">
+      <Card title="Shop analytics">
         <div className="stat-grid">
           {[
             { label: "Orders (all)", value: String(stats.orderCount) },
+            { label: "Orders (30d)", value: String(stats.ordersLast30) },
             { label: "Pending", value: String(stats.pending) },
             { label: "Completed", value: String(stats.completed) },
             { label: "Cancelled", value: String(stats.cancelled) },
             { label: "Revenue total", value: formatMoney(stats.revenue) },
+            { label: "Revenue (30d)", value: formatMoney(stats.revLast30) },
+            { label: "Revenue (prev 30d)", value: formatMoney(stats.revPrev30) },
+            {
+              label: "Revenue growth (30d vs prior)",
+              value: stats.growthPct == null ? "—" : `${stats.growthPct >= 0 ? "+" : ""}${stats.growthPct.toFixed(1)}%`,
+            },
             { label: "Today revenue", value: formatMoney(stats.todayRev) },
-            { label: "Repeat buyers (2+)", value: String(stats.repeatBuyers) },
+            { label: "Repeat customers (2+ orders)", value: String(stats.repeatBuyers) },
           ].map((t) => (
             <div key={t.label} className="neon-card">
               <div className="neon-card__body">
@@ -756,6 +986,9 @@ export function SellerDetail() {
           <Button variant="ghost" disabled={busy} onClick={() => void patchSeller({ isBlocked: !seller.isBlocked })}>
             {seller.isBlocked ? "Unblock" : "Block"}
           </Button>
+          <Button variant="danger" disabled={busy} onClick={() => setResetStoreOpen(true)}>
+            Reset storefront
+          </Button>
         </div>
         <p className="muted small" style={{ marginTop: "0.75rem" }}>
           State: <strong>{state}</strong>. Live sellers typically have slots &gt; 0 and are not blocked.
@@ -808,11 +1041,11 @@ export function SellerDetail() {
         }
       >
         <p className="muted small">
-          Enter a number to <strong>add</strong> slots, or <code className="code">=50</code> to set an exact balance.
+          Enter a number to <strong>add</strong> slots. To set an exact balance, type equals then the number (example: =50).
         </p>
         <label className="field">
           <span>Value</span>
-          <input className="input" value={slotDelta} onChange={(e) => setSlotDelta(e.target.value)} placeholder="10 or =50" />
+          <input className="input" value={slotDelta} onChange={(e) => setSlotDelta(e.target.value)} />
         </label>
       </Modal>
 
@@ -833,6 +1066,69 @@ export function SellerDetail() {
       >
         <p className="muted small" style={{ marginTop: 0 }}>
           The old code stops working as soon as you confirm. Share the new code with the seller.
+        </p>
+      </Modal>
+
+      <Modal
+        open={mapOpen}
+        title="Shop location"
+        onClose={() => !busy && setMapOpen(false)}
+        footer={
+          <>
+            <Button variant="ghost" disabled={busy} onClick={() => setMapOpen(false)}>
+              Cancel
+            </Button>
+            <Button disabled={busy || !mapDraft} onClick={() => void saveMapLocation()}>
+              Save location
+            </Button>
+          </>
+        }
+      >
+        {mapDraft ? <LocationMapPicker value={mapDraft} onChange={setMapDraft} /> : null}
+      </Modal>
+
+      <Modal
+        open={trialModal}
+        title="Trial period"
+        onClose={() => !busy && setTrialModal(false)}
+        footer={
+          <>
+            <Button variant="ghost" disabled={busy} onClick={() => setTrialModal(false)}>
+              Cancel
+            </Button>
+            <Button disabled={busy} onClick={() => void saveTrialDates()}>
+              Save dates
+            </Button>
+          </>
+        }
+      >
+        <label className="field">
+          <span>Trial start</span>
+          <input className="input" type="datetime-local" value={trialStartInput} onChange={(e) => setTrialStartInput(e.target.value)} />
+        </label>
+        <label className="field">
+          <span>Trial end</span>
+          <input className="input" type="datetime-local" value={trialEndInput} onChange={(e) => setTrialEndInput(e.target.value)} />
+        </label>
+      </Modal>
+
+      <Modal
+        open={resetStoreOpen}
+        title="Reset storefront?"
+        onClose={() => !busy && setResetStoreOpen(false)}
+        footer={
+          <>
+            <Button variant="ghost" disabled={busy} onClick={() => setResetStoreOpen(false)}>
+              Cancel
+            </Button>
+            <Button variant="danger" disabled={busy} onClick={() => void resetStorefront()}>
+              Reset
+            </Button>
+          </>
+        }
+      >
+        <p className="muted small" style={{ marginTop: 0 }}>
+          Removes every product for this shop and clears the shop hero image and QR image. Orders are kept.
         </p>
       </Modal>
 
@@ -860,7 +1156,7 @@ export function SellerDetail() {
                 className="input"
                 value={editField.value}
                 onChange={(e) => setEditField({ ...editField, value: e.target.value })}
-                type={editField.key === "password" ? "password" : "text"}
+                type="text"
               />
             )}
           </form>

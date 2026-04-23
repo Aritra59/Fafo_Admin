@@ -10,17 +10,25 @@ import {
   COLLECTIONS,
   isOrderCompleted,
   sellerOperationalCategory,
+  tsToDate,
 } from "../services/adminFirestore";
 import { formatMoney } from "../lib/format";
 import { orderTimeMs } from "../lib/orderTime";
 import type { BillingRecord, Order, Seller } from "../types/models";
+
+function trialEndsWithinDays(seller: Seller, days: number): boolean {
+  const end = tsToDate(seller.trialEnd as never);
+  if (!end) return false;
+  const now = Date.now();
+  if (end.getTime() <= now) return false;
+  return end.getTime() - now <= days * 86400000;
+}
 
 export function AdminDashboard() {
   const { appName } = useParams();
   const base = `/admin/${appName ?? "fafo"}`;
   const [orders, setOrders] = useState<Order[]>([]);
   const [sellers, setSellers] = useState<Seller[]>([]);
-  const [buyerCount, setBuyerCount] = useState(0);
   const [billingRows, setBillingRows] = useState<BillingRecord[]>([]);
 
   useEffect(() => {
@@ -34,14 +42,6 @@ export function AdminDashboard() {
       snap.forEach((d) => list.push({ id: d.id, ...(d.data() as DocumentData) }));
       setSellers(list);
     });
-    const unsubUsers = onSnapshot(collection(db, COLLECTIONS.users), (snap) => {
-      let n = 0;
-      snap.forEach((d) => {
-        const role = (d.data() as DocumentData).role as string | undefined;
-        if (!role || role === "buyer") n += 1;
-      });
-      setBuyerCount(n);
-    });
     const unsubBilling = onSnapshot(collection(db, COLLECTIONS.billing), (snap) => {
       const list: BillingRecord[] = [];
       snap.forEach((d) => list.push({ id: d.id, ...(d.data() as DocumentData) }));
@@ -51,7 +51,6 @@ export function AdminDashboard() {
     return () => {
       unsubOrders();
       unsubSellers();
-      unsubUsers();
       unsubBilling();
     };
   }, []);
@@ -59,41 +58,22 @@ export function AdminDashboard() {
   const stats = useMemo(() => {
     const startOfToday = new Date();
     startOfToday.setHours(0, 0, 0, 0);
-    const startOfMonth = new Date();
-    startOfMonth.setDate(1);
-    startOfMonth.setHours(0, 0, 0, 0);
 
-    let liveSellers = 0;
-    let trialSellers = 0;
-    let demoSellers = 0;
-    let suspendedSellers = 0;
+    let activeSellers = 0;
+    let trialsEnding = 0;
     let blockedSellers = 0;
     for (const s of sellers) {
-      const c = sellerOperationalCategory(s);
-      if (c === "blocked") blockedSellers += 1;
-      else if (c === "suspended") suspendedSellers += 1;
-      else if (c === "live") liveSellers += 1;
-      else if (c === "trial") trialSellers += 1;
-      else demoSellers += 1;
+      if (s.isBlocked) blockedSellers += 1;
+      if (sellerOperationalCategory(s) === "live") activeSellers += 1;
+      if (sellerOperationalCategory(s) === "trial" && trialEndsWithinDays(s, 7)) trialsEnding += 1;
     }
 
     let ordersToday = 0;
-    let ordersMonth = 0;
-    let revToday = 0;
-    let revMonth = 0;
-    let revenueAll = 0;
-
+    let gmv = 0;
     for (const o of orders) {
       const ms = orderTimeMs(o);
-      if (isOrderCompleted(o.status)) revenueAll += Number(o.total ?? 0);
-      if (ms >= startOfToday.getTime()) {
-        ordersToday += 1;
-        if (isOrderCompleted(o.status)) revToday += Number(o.total ?? 0);
-      }
-      if (ms >= startOfMonth.getTime()) {
-        ordersMonth += 1;
-        if (isOrderCompleted(o.status)) revMonth += Number(o.total ?? 0);
-      }
+      if (ms >= startOfToday.getTime()) ordersToday += 1;
+      if (isOrderCompleted(o.status)) gmv += Number(o.total ?? 0);
     }
 
     const pendingBilling = billingRows.filter((r) => (r.status ?? "pending").toLowerCase() === "pending").length;
@@ -101,40 +81,27 @@ export function AdminDashboard() {
     const trends = buildTrendMetrics(orders, sellers);
 
     return {
-      revenueAll,
+      gmv,
       orderCount: orders.length,
       sellerCount: sellers.length,
-      liveSellers,
-      trialSellers,
-      demoSellers,
-      suspendedSellers,
-      blockedSellers,
-      buyerCount,
+      activeSellers,
+      trialsEnding,
       ordersToday,
-      ordersMonth,
-      revToday,
-      revMonth,
       pendingBilling,
+      blockedSellers,
       billingAgg,
       trends,
     };
-  }, [orders, sellers, buyerCount, billingRows]);
+  }, [orders, sellers, billingRows]);
 
   const tiles = [
     { label: "Total sellers", value: String(stats.sellerCount) },
-    { label: "Live sellers", value: String(stats.liveSellers) },
-    { label: "Trial sellers", value: String(stats.trialSellers) },
-    { label: "Demo sellers", value: String(stats.demoSellers) },
-    { label: "Suspended sellers", value: String(stats.suspendedSellers) },
-    { label: "Blocked sellers", value: String(stats.blockedSellers) },
-    { label: "Total buyers", value: String(stats.buyerCount) },
+    { label: "Active sellers (live)", value: String(stats.activeSellers) },
+    { label: "Trials ending (7 days)", value: String(stats.trialsEnding) },
     { label: "Orders today", value: String(stats.ordersToday) },
-    { label: "Orders this month", value: String(stats.ordersMonth) },
-    { label: "Revenue today", value: formatMoney(stats.revToday) },
-    { label: "Revenue total", value: formatMoney(stats.revenueAll) },
-    { label: "Pending billing requests", value: String(stats.pendingBilling) },
-    { label: "Slots sold (approved billing)", value: String(stats.billingAgg.slotsSold) },
-    { label: "Repeat buyers (2+ orders)", value: String(stats.trends.repeatBuyers) },
+    { label: "Total GMV (completed)", value: formatMoney(stats.gmv) },
+    { label: "Pending billing", value: String(stats.pendingBilling) },
+    { label: "Blocked sellers", value: String(stats.blockedSellers) },
   ];
 
   return (
@@ -142,11 +109,11 @@ export function AdminDashboard() {
       <header className="page-head">
         <div>
           <h1 className="page-title">Dashboard</h1>
-          <p className="muted">Realtime totals — orders, sellers, buyers, billing</p>
+          <p className="muted">Live overview of shops, orders, and billing</p>
         </div>
         <div className="btn-row">
           <Link className="btn" to={`${base}/analytics`}>
-            Open analytics
+            Analytics
           </Link>
           <Link className="btn btn--ghost" to={`${base}/billing`}>
             Billing
@@ -166,6 +133,11 @@ export function AdminDashboard() {
           </Card>
         ))}
       </div>
+
+      <p className="muted small" style={{ marginTop: "1rem" }}>
+        Approved billing packages (slots sold): {String(stats.billingAgg.slotsSold)} · Repeat buyers (2+ orders):{" "}
+        {String(stats.trends.repeatBuyers)}
+      </p>
 
       <div className="split-2" style={{ marginTop: "1rem" }}>
         <Card title="Orders trend (14 days)">

@@ -253,7 +253,7 @@ export function SettingsPage() {
         <Button onClick={() => void save()} disabled={busy}>
           {busy ? "Saving…" : "Save all settings"}
         </Button>
-        <p className="muted small">Values sync live from Firestore after save.</p>
+        <p className="muted small">After you save, connected apps pick up these values automatically.</p>
       </Card>
     </div>
   );

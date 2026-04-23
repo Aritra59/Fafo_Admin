@@ -1,13 +1,23 @@
 import type { Timestamp } from "firebase/firestore";
 
+export type BillingPlanType = "trial" | "monthly" | "daily" | "slot";
+
 export type Seller = {
   id: string;
   shopName?: string;
   ownerName?: string;
   phone?: string;
   shopCode?: string;
-  /** Plain password for shopCode + password login (matches existing admin pattern) */
+  whatsappNumber?: string;
+  /** @deprecated Legacy field — do not set on new sellers */
   password?: string;
+  /** When false, storefront selling is disabled (e.g. unpaid). */
+  sellingEnabled?: boolean;
+  pendingDues?: number;
+  billingPlanType?: BillingPlanType;
+  locationCity?: string;
+  locationState?: string;
+  locationCountry?: string;
   /** Wallet credited when billing payments are approved */
   walletBalance?: number;
   /** Preferred balance field for seller apps + admin Go Live */
@@ -43,6 +53,25 @@ export type Seller = {
   overrideOrderFeePercent?: number;
   /** Quick recharge buttons (same shape as global preset amounts) */
   overridePresetAmounts?: number[];
+};
+
+export type SellerProduct = {
+  id: string;
+  sellerId?: string;
+  name?: string;
+  /** Menu section label (Breakfast, Lunch, …) — align with menus collection names */
+  menuGroup?: string;
+  category?: string;
+  price?: number;
+  qty?: number;
+  quantity?: number;
+  stock?: number;
+  available?: boolean;
+  featured?: boolean;
+  imageUrl?: string;
+  photoUrl?: string;
+  image?: string;
+  createdAt?: Timestamp | string;
 };
 
 export type BuyerUser = {
@@ -134,4 +163,70 @@ export type GlobalSettings = {
   appBanners?: { title?: string; body?: string; enabled?: boolean }[];
   maintenanceMode?: boolean;
   forceCloseOrdering?: boolean;
+};
+
+/** Where the creative runs (seller + buyer surfaces) */
+export type AdPlacement = "seller_home" | "seller_dashboard" | "buyer_explore";
+
+/** Who sees the ad */
+export type AdAudience = "global" | "seller_specific" | "buyer_specific";
+
+/** Seller app ads — managed from Admin → Ads Management */
+export type FafoAd = {
+  id: string;
+  title?: string;
+  subtitle?: string;
+  ctaText?: string;
+  ctaLink?: string;
+  active?: boolean;
+  startAt?: Timestamp | string;
+  endAt?: Timestamp | string;
+  /** v2: single surface per row */
+  placement?: AdPlacement;
+  audience?: AdAudience;
+  targetSellerIds?: string[];
+  /** Reserved for buyer-specific explore ads */
+  targetBuyerIds?: string[];
+  bannerImageUrl?: string;
+  /** Higher runs first in admin + client lists */
+  priority?: number;
+  /** Multiple surfaces in one campaign */
+  placements?: AdPlacement[];
+  /** Full creative set; first item mirrors bannerImageUrl for older clients */
+  bannerUrls?: string[];
+  /** Legacy (pre-v2) — still read for thumbnails until migrated */
+  targetMode?: "all" | "selected";
+  placementHome?: boolean;
+  placementDashboard?: boolean;
+  bannerUrlHome?: string;
+  bannerUrlDashboard?: string;
+  /** Seller app: seller doc id or `"all"` */
+  targetSellerId?: string;
+  createdAt?: Timestamp | string;
+  updatedAt?: Timestamp | string;
+};
+
+export type AdClickKind = "impression" | "click";
+
+/** Must match placement on the ad document for seller/buyer apps */
+export type AdClickPlacement = "seller_home" | "seller_dashboard" | "buyer_explore";
+
+export type AdClickEvent = {
+  id: string;
+  adId?: string;
+  sellerId?: string;
+  buyerId?: string;
+  placement?: AdClickPlacement;
+  kind?: AdClickKind;
+  createdAt?: Timestamp | string;
+};
+
+/** Menu group for a seller (Breakfast, Lunch, …) */
+export type SellerMenu = {
+  id: string;
+  sellerId?: string;
+  name?: string;
+  sortOrder?: number;
+  productIds?: string[];
+  createdAt?: Timestamp | string;
 };

@@ -119,7 +119,7 @@ export function StoragePage() {
       <header className="page-head">
         <div>
           <h1 className="page-title">Storage</h1>
-          <p className="muted">Shop images, product images, and QR uploads tracked in Firestore · delete clears Storage + field</p>
+          <p className="muted">Shop images, product photos, and QR files linked from seller and product records. Removing an asset deletes the file and clears the link.</p>
         </div>
       </header>
 

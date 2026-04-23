@@ -1,0 +1,19 @@
+{
+  "name": "FaFo Admin",
+  "short_name": "FaFo Admin",
+  "description": "FaFo ecosystem control panel",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#070a12",
+  "theme_color": "#070a12",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

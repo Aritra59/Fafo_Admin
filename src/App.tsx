@@ -1,5 +1,6 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AdminSessionProvider } from "./contexts/AdminSessionContext";
+import { InstallPromptBanner } from "./components/InstallPromptBanner";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { AdminLayout } from "./components/AdminLayout";
 import { HomeRedirect } from "./components/HomeRedirect";
@@ -14,6 +15,7 @@ import { TemplatesPage } from "./pages/TemplatesPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { AnalyticsPage } from "./pages/AnalyticsPage";
 import { StoragePage } from "./pages/StoragePage";
+import { AdsManagementPage } from "./pages/AdsManagementPage";
 import { CreateSeller } from "./pages/CreateSeller";
 import { CreateBuyer } from "./pages/CreateBuyer";
 import { SellerDetail } from "./pages/SellerDetail";
@@ -23,6 +25,8 @@ export default function App() {
   return (
     <AdminSessionProvider>
       <BrowserRouter>
+        <>
+          <InstallPromptBanner />
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/" element={<HomeRedirect />} />
@@ -52,12 +56,14 @@ export default function App() {
             <Route path="orders" element={<OrdersPage />} />
             <Route path="billing" element={<BillingPage />} />
             <Route path="analytics" element={<AnalyticsPage />} />
+            <Route path="ads" element={<AdsManagementPage />} />
             <Route path="templates" element={<TemplatesPage />} />
             <Route path="settings" element={<SettingsPage />} />
             <Route path="storage" element={<StoragePage />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+        </>
       </BrowserRouter>
     </AdminSessionProvider>
   );

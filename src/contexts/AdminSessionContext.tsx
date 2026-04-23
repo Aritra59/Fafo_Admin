@@ -19,7 +19,7 @@ import {
 type AdminSessionState = {
   admin: AdminSession | null;
   loading: boolean;
-  login: (phone: string, password: string) => Promise<void>;
+  login: (phone: string, password: string, remember?: boolean) => Promise<void>;
   logout: () => void;
 };
 
@@ -34,7 +34,7 @@ export function AdminSessionProvider({ children }: { children: ReactNode }) {
     setLoading(false);
   }, []);
 
-  const login = useCallback(async (phone: string, password: string) => {
+  const login = useCallback(async (phone: string, password: string, remember = true) => {
     const inputPhone = phone.trim();
     if (!inputPhone) throw new Error("Enter your phone number.");
 
@@ -62,7 +62,7 @@ export function AdminSessionProvider({ children }: { children: ReactNode }) {
       role,
     };
 
-    writeAdminToStorage(session);
+    writeAdminToStorage(session, remember);
     setAdmin(session);
   }, []);
 

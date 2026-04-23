@@ -183,7 +183,7 @@ export function SellersPage() {
   async function suspendSeller(s: Seller) {
     if (
       !window.confirm(
-        `Suspend ${s.shopName ?? s.id}? Login stays allowed; shop should not receive new orders until reactivated.`
+        `Suspend ${s.shopName ?? s.id}? The seller can still open the app, but new customer orders should pause until you reactivate.`
       )
     ) {
       return;
@@ -414,7 +414,7 @@ export function SellersPage() {
                           Delete
                         </Button>
                         <Button variant="ghost" className="btn--compact" onClick={() => setDetail(s)}>
-                          Raw JSON
+                          View record
                         </Button>
                         <a className="btn btn--ghost btn--compact" href={waLink(s.phone)} target="_blank" rel="noreferrer">
                           WA
@@ -431,7 +431,7 @@ export function SellersPage() {
 
       <Modal
         open={!!detail}
-        title="Seller document (debug)"
+        title="Seller record"
         onClose={() => setDetail(null)}
         footer={
           <Button variant="ghost" onClick={() => setDetail(null)}>
@@ -481,8 +481,7 @@ export function SellersPage() {
             <span>Start immediately (full live activation)</span>
           </label>
           <p className="muted small">
-            When unchecked, only <strong>slots</strong> and <strong>wallet balance</strong> update — seller mode stays unchanged.
-            When checked, applies live mode, clears trial dominance, writes billing log <code className="code">GO_LIVE</code>.
+            When unchecked, only slots and wallet balance update — the seller&apos;s mode stays unchanged. When checked, the shop is fully activated for live selling and the trial banner is cleared.
           </p>
         </div>
       </Modal>
@@ -525,7 +524,7 @@ export function SellersPage() {
         }
       >
         <p className="muted small">
-          Choose mode below. <strong>Add</strong> can optionally run full Go Live (cyan path) without opening the Go Live modal.
+          Choose a mode below. Add mode can optionally run the same full activation as the Go Live action.
         </p>
         <label className="field">
           <span>Mode</span>
