@@ -8,13 +8,26 @@ import {
   approveBillingRecord,
   COLLECTIONS,
   rejectBillingRecord,
+  tsToDate,
 } from "../services/adminFirestore";
 import { formatMoney, formatDate } from "../lib/format";
-import type { BillingRecord, Seller } from "../types/models";
+import type { BillingLogEntry, BillingRecord, Seller } from "../types/models";
+
+type LogTab = "all" | "topups" | "deductions" | "slots";
+
+function logBucket(entry: BillingLogEntry): Exclude<LogTab, "all"> {
+  const amt = Number(entry.amountAdded ?? 0);
+  const act = (entry.action ?? "").toUpperCase();
+  if (amt > 0) return "topups";
+  if (amt < 0 || /DEDUCT|WITHDRAW|DEBIT|CHARGE|FEE/.test(act)) return "deductions";
+  return "slots";
+}
 
 export function BillingPage() {
   const [rows, setRows] = useState<BillingRecord[]>([]);
   const [sellers, setSellers] = useState<Seller[]>([]);
+  const [logs, setLogs] = useState<BillingLogEntry[]>([]);
+  const [logTab, setLogTab] = useState<LogTab>("all");
   const [busyId, setBusyId] = useState<string | null>(null);
   const [rejectRow, setRejectRow] = useState<BillingRecord | null>(null);
   const [rejectNote, setRejectNote] = useState("");
@@ -39,9 +52,20 @@ export function BillingPage() {
       snap.forEach((d) => list.push({ id: d.id, ...(d.data() as DocumentData) }));
       setSellers(list);
     });
+    const u3 = onSnapshot(collection(db, COLLECTIONS.billingLogs), (snap) => {
+      const list: BillingLogEntry[] = [];
+      snap.forEach((d) => list.push({ id: d.id, ...(d.data() as DocumentData) }));
+      list.sort((a, b) => {
+        const da = tsToDate(a.createdAt as never)?.getTime() ?? 0;
+        const dbi = tsToDate(b.createdAt as never)?.getTime() ?? 0;
+        return dbi - da;
+      });
+      setLogs(list.slice(0, 500));
+    });
     return () => {
       u1();
       u2();
+      u3();
     };
   }, []);
 
@@ -50,6 +74,11 @@ export function BillingPage() {
     for (const s of sellers) m.set(s.id, s.shopName ?? s.ownerName ?? s.id);
     return m;
   }, [sellers]);
+
+  const filteredLogs = useMemo(() => {
+    if (logTab === "all") return logs;
+    return logs.filter((e) => logBucket(e) === logTab);
+  }, [logs, logTab]);
 
   async function approve(b: BillingRecord) {
     setBusyId(b.id);
@@ -112,13 +141,13 @@ export function BillingPage() {
       <header className="page-head">
         <div>
           <h1 className="page-title">Billing / Slots</h1>
-          <p className="muted">Approve payments, reject with a note, or add slots manually.</p>
+          <p className="muted">Approve payments, reject with a note, or add slots manually. Wallet activity streams from billing logs.</p>
         </div>
       </header>
 
-      <Card>
+      <Card title="Pending payment proofs">
         <div className="table-wrap">
-          <table className="data-table">
+          <table className="data-table data-table--enterprise">
             <thead>
               <tr>
                 <th>Seller</th>
@@ -128,7 +157,7 @@ export function BillingPage() {
                 <th>Status</th>
                 <th>Note</th>
                 <th>Created</th>
-                <th />
+                <th className="actions-cell" />
               </tr>
             </thead>
             <tbody>
@@ -158,9 +187,10 @@ export function BillingPage() {
                   <td className="cell-clamp small">{b.adminNote ?? "—"}</td>
                   <td className="muted small">{formatDate(b.createdAt)}</td>
                   <td className="actions-cell">
-                    <div className="btn-row">
+                    <div className="seller-actions">
                       <Button
                         variant="primary"
+                        className="btn--compact"
                         disabled={busyId === b.id || (b.status ?? "pending").toLowerCase() !== "pending"}
                         onClick={() => void approve(b)}
                       >
@@ -168,6 +198,7 @@ export function BillingPage() {
                       </Button>
                       <Button
                         variant="ghost"
+                        className="btn--compact"
                         disabled={busyId === b.id || (b.status ?? "pending").toLowerCase() !== "pending"}
                         onClick={() => {
                           setRejectRow(b);
@@ -178,6 +209,7 @@ export function BillingPage() {
                       </Button>
                       <Button
                         variant="ghost"
+                        className="btn--compact"
                         disabled={busyId === b.id}
                         onClick={() => {
                           setNoteRow(b);
@@ -188,6 +220,7 @@ export function BillingPage() {
                       </Button>
                       <Button
                         variant="ghost"
+                        className="btn--compact"
                         disabled={busyId === b.id || !b.sellerId}
                         onClick={() => {
                           setManualRow(b);
@@ -203,6 +236,64 @@ export function BillingPage() {
             </tbody>
           </table>
         </div>
+      </Card>
+
+      <Card title="Recharge &amp; wallet activity">
+        <div className="billing-log-toolbar">
+          {(
+            [
+              ["all", "All"],
+              ["topups", "Top-ups"],
+              ["deductions", "Deductions"],
+              ["slots", "Slots / balance"],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              className={`filter-chip${logTab === id ? " filter-chip--on" : ""}`}
+              onClick={() => setLogTab(id)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="table-wrap">
+          <table className="data-table data-table--enterprise data-table--dense">
+            <thead>
+              <tr>
+                <th>When</th>
+                <th>Seller</th>
+                <th>Kind</th>
+                <th>Action</th>
+                <th className="numeric">INR</th>
+                <th className="numeric">Slots</th>
+                <th>Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredLogs.map((e) => (
+                <tr key={e.id}>
+                  <td className="muted small">{formatDate(e.createdAt)}</td>
+                  <td>
+                    <div className="cell-strong small">{sellerName.get(e.sellerId ?? "") ?? "—"}</div>
+                    <div className="muted mono small">{e.sellerId ?? "—"}</div>
+                  </td>
+                  <td>
+                    <span className="pill pill--muted">{logBucket(e)}</span>
+                  </td>
+                  <td className="mono small">{e.action ?? "—"}</td>
+                  <td className="numeric small">
+                    {Number(e.amountAdded ?? 0) !== 0 ? formatMoney(Number(e.amountAdded)) : "—"}
+                  </td>
+                  <td className="numeric small">{e.slotsAdded != null ? String(e.slotsAdded) : "—"}</td>
+                  <td className="cell-clamp small muted">{e.notes ?? "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {filteredLogs.length === 0 ? <p className="muted small">No log rows in this view.</p> : null}
       </Card>
 
       <Modal

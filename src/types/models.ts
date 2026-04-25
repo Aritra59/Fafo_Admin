@@ -59,9 +59,15 @@ export type SellerProduct = {
   id: string;
   sellerId?: string;
   name?: string;
+  /** Optional link to globalMenuCategories doc for admin “in use” checks */
+  globalMenuCategoryId?: string;
   /** Menu section label (Breakfast, Lunch, …) — align with menus collection names */
   menuGroup?: string;
   category?: string;
+  /** When true or itemType === "combo", counted as combo in admin */
+  isCombo?: boolean;
+  itemType?: string;
+  type?: string;
   price?: number;
   qty?: number;
   quantity?: number;
@@ -163,10 +169,42 @@ export type GlobalSettings = {
   appBanners?: { title?: string; body?: string; enabled?: boolean }[];
   maintenanceMode?: boolean;
   forceCloseOrdering?: boolean;
+  /**
+   * Buyer app public shop URL; use literal `{shopCode}` once (e.g. https://fafo.app/s/{shopCode}).
+   * Seller admin substitutes the seller shop code when present.
+   */
+  buyerShopPublicUrlTemplate?: string;
+};
+
+/** Firestore: globalCuisineCategories — platform-wide cuisines for seller filtering */
+export type GlobalCuisineCategory = {
+  id: string;
+  name?: string;
+  slug?: string;
+  active?: boolean;
+  sortOrder?: number;
+  createdAt?: Timestamp | string;
+  updatedAt?: Timestamp | string;
+  /** When set, row is archived (soft delete). */
+  deletedAt?: Timestamp | string | null;
+};
+
+/** Firestore: globalMenuCategories — catalog labels linkable to multiple cuisines */
+export type GlobalMenuCategory = {
+  id: string;
+  name?: string;
+  slug?: string;
+  /** Global cuisine document ids where this menu category appears */
+  cuisineIds?: string[];
+  active?: boolean;
+  sortOrder?: number;
+  createdAt?: Timestamp | string;
+  updatedAt?: Timestamp | string;
+  deletedAt?: Timestamp | string | null;
 };
 
 /** Where the creative runs (seller + buyer surfaces) */
-export type AdPlacement = "seller_home" | "seller_dashboard" | "buyer_explore";
+export type AdPlacement = "seller_home" | "seller_dashboard" | "buyer_explore" | "buyer_shop";
 
 /** Who sees the ad */
 export type AdAudience = "global" | "seller_specific" | "buyer_specific";
@@ -198,8 +236,14 @@ export type FafoAd = {
   targetMode?: "all" | "selected";
   placementHome?: boolean;
   placementDashboard?: boolean;
+  /** Buyer app: explore / discovery feed */
+  placementBuyerExplore?: boolean;
+  /** Buyer app: individual shop / storefront */
+  placementBuyerShop?: boolean;
   bannerUrlHome?: string;
   bannerUrlDashboard?: string;
+  bannerUrlBuyerExplore?: string;
+  bannerUrlBuyerShop?: string;
   /** Seller app: seller doc id or `"all"` */
   targetSellerId?: string;
   createdAt?: Timestamp | string;
@@ -209,7 +253,7 @@ export type FafoAd = {
 export type AdClickKind = "impression" | "click";
 
 /** Must match placement on the ad document for seller/buyer apps */
-export type AdClickPlacement = "seller_home" | "seller_dashboard" | "buyer_explore";
+export type AdClickPlacement = "seller_home" | "seller_dashboard" | "buyer_explore" | "buyer_shop";
 
 export type AdClickEvent = {
   id: string;
@@ -228,5 +272,21 @@ export type SellerMenu = {
   name?: string;
   sortOrder?: number;
   productIds?: string[];
+  createdAt?: Timestamp | string;
+};
+
+/** Wallet / slot adjustments written by admin flows (billingLogs) */
+export type BillingLogEntry = {
+  id: string;
+  sellerId?: string;
+  /** e.g. GO_LIVE, ADD_SLOTS, ADMIN_WALLET_TOPUP */
+  action?: string;
+  slotsAdded?: number;
+  /** Positive = credit to wallet; negative = deduction when used by apps */
+  amountAdded?: number;
+  adminId?: string;
+  notes?: string;
+  startImmediately?: boolean;
+  autoActivateLive?: boolean;
   createdAt?: Timestamp | string;
 };

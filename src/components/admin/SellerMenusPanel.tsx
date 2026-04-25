@@ -16,6 +16,8 @@ import { db } from "../../firebase";
 import { Card } from "../Card";
 import { Button } from "../Button";
 import { Modal } from "../Modal";
+import { isComboProduct } from "../../lib/productKinds";
+import { formatMoney } from "../../lib/format";
 import { COLLECTIONS } from "../../services/adminFirestore";
 import type { SellerMenu, SellerProduct } from "../../types/models";
 
@@ -26,6 +28,7 @@ export function SellerMenusPanel({ sellerId }: { sellerId: string }) {
   const [modal, setModal] = useState<null | { mode: "add" } | { mode: "edit"; m: SellerMenu }>(null);
   const [menuName, setMenuName] = useState("");
   const [assignOpen, setAssignOpen] = useState<SellerMenu | null>(null);
+  const [inspectOpen, setInspectOpen] = useState<SellerMenu | null>(null);
   const [selectedProductIds, setSelectedProductIds] = useState<Set<string>>(() => new Set());
 
   useEffect(() => {
@@ -147,6 +150,12 @@ export function SellerMenusPanel({ sellerId }: { sellerId: string }) {
     });
   }
 
+  const inspectedProducts = inspectOpen
+    ? (inspectOpen.productIds ?? [])
+        .map((id) => products.find((p) => p.id === id))
+        .filter((p): p is SellerProduct => Boolean(p))
+    : [];
+
   return (
     <Card title="Menus">
       <p className="muted small" style={{ marginTop: 0 }}>
@@ -190,6 +199,9 @@ export function SellerMenusPanel({ sellerId }: { sellerId: string }) {
                 <td className="muted small">{(m.productIds ?? []).length} linked</td>
                 <td className="actions-cell">
                   <div className="btn-row">
+                    <Button variant="ghost" className="btn--compact" disabled={busy} onClick={() => setInspectOpen(m)}>
+                      Inspect
+                    </Button>
                     <Button variant="ghost" className="btn--compact" disabled={busy} onClick={() => openAssign(m)}>
                       Assign products
                     </Button>
@@ -242,6 +254,44 @@ export function SellerMenusPanel({ sellerId }: { sellerId: string }) {
             </datalist>
           </label>
         </form>
+      </Modal>
+
+      <Modal
+        open={!!inspectOpen}
+        title={inspectOpen ? `Menu: ${inspectOpen.name ?? ""}` : "Menu"}
+        onClose={() => setInspectOpen(null)}
+        footer={
+          <Button variant="ghost" type="button" onClick={() => setInspectOpen(null)}>
+            Close
+          </Button>
+        }
+      >
+        <p className="muted small" style={{ marginTop: 0 }}>
+          Linked catalog rows for this menu section (order matches stored <span className="mono">productIds</span>).
+        </p>
+        <div className="table-wrap" style={{ maxHeight: "min(360px, 55dvh)" }}>
+          <table className="data-table data-table--dense">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Type</th>
+                <th>Price</th>
+              </tr>
+            </thead>
+            <tbody>
+              {inspectedProducts.map((p) => (
+                <tr key={p.id}>
+                  <td className="cell-strong small">{p.name ?? p.id}</td>
+                  <td>
+                    <span className={`pill${isComboProduct(p) ? " pill--demo" : ""}`}>{isComboProduct(p) ? "Combo" : "Product"}</span>
+                  </td>
+                  <td className="muted small">{formatMoney(Number(p.price ?? 0))}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {inspectedProducts.length === 0 ? <p className="muted small">No linked products yet.</p> : null}
       </Modal>
 
       <Modal

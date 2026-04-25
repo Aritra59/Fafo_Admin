@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { collection, onSnapshot, type DocumentData } from "firebase/firestore";
 import { db } from "../firebase";
 import { Card } from "../components/Card";
+import { BillingRechargeMonitor } from "../components/admin/BillingRechargeMonitor";
 import { SimpleBarChart } from "../components/admin/SimpleBarChart";
 import {
   aggregateApprovedBilling,
@@ -206,6 +207,10 @@ export function AnalyticsPage() {
         <Card title="Top buyers (by phone)">
           <SimpleBarChart points={metrics.topBuyers} />
         </Card>
+      </div>
+
+      <div style={{ marginTop: "1.5rem" }}>
+        <BillingRechargeMonitor />
       </div>
     </div>
   );

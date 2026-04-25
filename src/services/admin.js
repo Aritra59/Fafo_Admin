@@ -2,6 +2,7 @@ import {
   addDoc,
   collection,
   doc,
+  getCountFromServer,
   getDocs,
   increment,
   limit,
@@ -31,6 +32,10 @@ export const COLLECTIONS = {
   adClicks: "adClicks",
   /** Seller menu groups (Breakfast, Lunch, …) + product ids */
   menus: "menus",
+  /** Global cuisines (South Indian, Chinese, …) — seller app taxonomy */
+  globalCuisineCategories: "globalCuisineCategories",
+  /** Global menu item categories (Dosas, Fish Curry, …) — links to cuisines via cuisineIds */
+  globalMenuCategories: "globalMenuCategories",
 };
 
 export const SETTINGS_GLOBAL_ID = "global";
@@ -106,6 +111,31 @@ async function appendBillingLog(entry) {
   await addDoc(collection(db, COLLECTIONS.billingLogs), {
     ...entry,
     createdAt: serverTimestamp(),
+  });
+}
+
+/**
+ * Manual wallet credit from admin. Writes billingLogs row (ADMIN_WALLET_TOPUP).
+ * @param {{ sellerId: string; amount: number; adminId?: string; notes?: string }} input
+ */
+export async function adminManualWalletTopup(input) {
+  const { sellerId, amount, adminId, notes } = input;
+  const amt = Math.max(0, Number(amount));
+  if (!sellerId || !Number.isFinite(amt) || amt <= 0) {
+    throw new Error("Enter a valid seller and amount greater than zero.");
+  }
+  const ref = doc(db, COLLECTIONS.sellers, sellerId);
+  await updateDoc(ref, {
+    currentAvailableBalance: increment(amt),
+    walletBalance: increment(amt),
+  });
+  await appendBillingLog({
+    sellerId,
+    action: "ADMIN_WALLET_TOPUP",
+    amountAdded: amt,
+    slotsAdded: 0,
+    adminId: adminId ?? "",
+    notes: String(notes ?? "").trim() || "Admin manual wallet top-up",
   });
 }
 
@@ -224,6 +254,14 @@ export async function adminPutOnTrial(input) {
 export async function adminSuspendSeller(sellerId) {
   await updateDoc(doc(db, COLLECTIONS.sellers, sellerId), {
     sellerMode: "suspended",
+    isLive: false,
+  });
+}
+
+/** Mark seller as demo / offline storefront (not trial, not live). */
+export async function adminSetDemoMode(sellerId) {
+  await updateDoc(doc(db, COLLECTIONS.sellers, sellerId), {
+    sellerMode: "demo",
     isLive: false,
   });
 }
@@ -554,4 +592,116 @@ export function collectProductImageUrls(data) {
     for (const v of Object.values(data.media)) push(v);
   }
   return [...new Set(urls)];
+}
+
+/** URL-safe slug from display name */
+export function slugifyCategoryName(raw) {
+  const s = String(raw ?? "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return s || "category";
+}
+
+/**
+ * @param {string} slug
+ * @param {string} [excludeDocId]
+ * @returns {Promise<boolean>}
+ */
+export async function isGlobalCuisineSlugTaken(slug, excludeDocId) {
+  const s = String(slug ?? "").trim();
+  if (!s) return false;
+  const q = query(collection(db, COLLECTIONS.globalCuisineCategories), where("slug", "==", s), limit(8));
+  const snap = await getDocs(q);
+  for (const d of snap.docs) {
+    if (excludeDocId && d.id === excludeDocId) continue;
+    return true;
+  }
+  return false;
+}
+
+/**
+ * @param {string} slug
+ * @param {string} [excludeDocId]
+ * @returns {Promise<boolean>}
+ */
+export async function isGlobalMenuCategorySlugTaken(slug, excludeDocId) {
+  const s = String(slug ?? "").trim();
+  if (!s) return false;
+  const q = query(collection(db, COLLECTIONS.globalMenuCategories), where("slug", "==", s), limit(8));
+  const snap = await getDocs(q);
+  for (const d of snap.docs) {
+    if (excludeDocId && d.id === excludeDocId) continue;
+    return true;
+  }
+  return false;
+}
+
+/**
+ * @param {string} cuisineId
+ * @returns {Promise<{ id: string; name?: string }[]>}
+ */
+export async function listGlobalMenuCategoriesLinkedToCuisine(cuisineId) {
+  const q = query(collection(db, COLLECTIONS.globalMenuCategories), where("cuisineIds", "array-contains", cuisineId));
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => {
+    const x = d.data();
+    return { id: d.id, name: x.name };
+  });
+}
+
+/** Removes cuisine id from every global menu category (for archive / cleanup). */
+export async function unlinkGlobalCuisineFromAllMenus(cuisineId) {
+  const snap = await getDocs(
+    query(collection(db, COLLECTIONS.globalMenuCategories), where("cuisineIds", "array-contains", cuisineId))
+  );
+  let batch = writeBatch(db);
+  let count = 0;
+  for (const d of snap.docs) {
+    const data = d.data();
+    const next = (Array.isArray(data.cuisineIds) ? data.cuisineIds : []).filter((x) => x !== cuisineId);
+    batch.update(d.ref, { cuisineIds: next, updatedAt: serverTimestamp() });
+    count += 1;
+    if (count >= 400) {
+      await batch.commit();
+      batch = writeBatch(db);
+      count = 0;
+    }
+  }
+  if (count > 0) await batch.commit();
+}
+
+/**
+ * @param {string} menuCategoryId
+ * @returns {Promise<number>}
+ */
+export async function countProductsUsingGlobalMenuCategory(menuCategoryId) {
+  try {
+    const q = query(collection(db, COLLECTIONS.products), where("globalMenuCategoryId", "==", menuCategoryId));
+    const snap = await getCountFromServer(q);
+    return snap.data().count;
+  } catch {
+    return 0;
+  }
+}
+
+/** Soft-delete cuisine: unlink from menus, mark archived. */
+export async function archiveGlobalCuisineCategory(cuisineId) {
+  await unlinkGlobalCuisineFromAllMenus(cuisineId);
+  await updateDoc(doc(db, COLLECTIONS.globalCuisineCategories, cuisineId), {
+    active: false,
+    deletedAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+}
+
+/** Soft-delete global menu category. */
+export async function archiveGlobalMenuCategory(menuCategoryId) {
+  await updateDoc(doc(db, COLLECTIONS.globalMenuCategories, menuCategoryId), {
+    active: false,
+    deletedAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
 }

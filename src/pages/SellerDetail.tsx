@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import { useAdminSession } from "../contexts/AdminSessionContext";
 import {
   collection,
   deleteDoc,
@@ -21,6 +22,10 @@ import { SellerStatusBadge } from "../components/admin/SellerStatusBadge";
 import { SimpleBarChart } from "../components/admin/SimpleBarChart";
 import {
   COLLECTIONS,
+  SETTINGS_GLOBAL_ID,
+  adminGoLive,
+  adminPutOnTrial,
+  adminSetDemoMode,
   deleteSellerOrders,
   deleteSellerProducts,
   deleteStorageFileIfUrl,
@@ -32,6 +37,8 @@ import {
   isShopCodeTaken,
   isTrialActive,
   sellerBillingAccessLabel,
+  sellerDisplayLabel,
+  sellerOperationalCategory,
   sellerUiState,
   toCsvRow,
   tsToDate,
@@ -40,8 +47,10 @@ import { LocationMapPicker, type MapLocationValue } from "../components/admin/Lo
 import { SellerMenusPanel } from "../components/admin/SellerMenusPanel";
 import { SellerProductsPanel } from "../components/admin/SellerProductsPanel";
 import { formatMoney, formatDate, summarizeItems, waLink, waMessageLink } from "../lib/format";
+import { isComboProduct } from "../lib/productKinds";
+import { buildPublicShopUrl } from "../lib/publicShopUrl";
 import { orderTimeMs } from "../lib/orderTime";
-import type { BillingPlanType, Order, OrderItem, Seller } from "../types/models";
+import type { BillingPlanType, GlobalSettings, Order, OrderItem, Seller, SellerMenu, SellerProduct } from "../types/models";
 
 function itemLabel(it: OrderItem): string {
   return String(it.name ?? it.title ?? "Item");
@@ -51,6 +60,7 @@ export function SellerDetail() {
   const { appName, sellerId } = useParams();
   const base = `/admin/${appName ?? "fafo"}`;
   const navigate = useNavigate();
+  const { admin } = useAdminSession();
   const [seller, setSeller] = useState<Seller | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
   const [busy, setBusy] = useState(false);
@@ -72,6 +82,41 @@ export function SellerDetail() {
   const [trialStartInput, setTrialStartInput] = useState("");
   const [trialEndInput, setTrialEndInput] = useState("");
   const [resetStoreOpen, setResetStoreOpen] = useState(false);
+  const [sellerMenus, setSellerMenus] = useState<SellerMenu[]>([]);
+  const [sellerProducts, setSellerProducts] = useState<SellerProduct[]>([]);
+  const [buyerShopUrlTemplate, setBuyerShopUrlTemplate] = useState("");
+  const [trialDaysQuick, setTrialDaysQuick] = useState("7");
+  const [goLiveOpen, setGoLiveOpen] = useState(false);
+  const [goLiveSlots, setGoLiveSlots] = useState("5");
+  const [goLiveRecharge, setGoLiveRecharge] = useState("0");
+
+  useEffect(() => {
+    return onSnapshot(doc(db, COLLECTIONS.settings, SETTINGS_GLOBAL_ID), (snap) => {
+      const d = (snap.exists() ? snap.data() : {}) as GlobalSettings;
+      setBuyerShopUrlTemplate(String(d.buyerShopPublicUrlTemplate ?? ""));
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!sellerId) return;
+    const q = query(collection(db, COLLECTIONS.menus), where("sellerId", "==", sellerId));
+    return onSnapshot(q, (snap) => {
+      const list: SellerMenu[] = [];
+      snap.forEach((d) => list.push({ id: d.id, ...(d.data() as DocumentData) }));
+      list.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || String(a.name ?? "").localeCompare(String(b.name ?? "")));
+      setSellerMenus(list);
+    });
+  }, [sellerId]);
+
+  useEffect(() => {
+    if (!sellerId) return;
+    const q = query(collection(db, COLLECTIONS.products), where("sellerId", "==", sellerId));
+    return onSnapshot(q, (snap) => {
+      const list: SellerProduct[] = [];
+      snap.forEach((d) => list.push({ id: d.id, ...(d.data() as DocumentData) }));
+      setSellerProducts(list);
+    });
+  }, [sellerId]);
 
   useEffect(() => {
     if (!seller) return;
@@ -172,6 +217,23 @@ export function SellerDetail() {
       orderCount: list.length,
     };
   }, [orders]);
+
+  const catalogStats = useMemo(() => {
+    const combos = sellerProducts.filter((p) => isComboProduct(p)).length;
+    const total = sellerProducts.length;
+    return { total, combos, items: Math.max(0, total - combos) };
+  }, [sellerProducts]);
+
+  const primaryMenuName = useMemo(() => {
+    const sorted = [...sellerMenus].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+    const withProducts = sorted.find((m) => (m.productIds ?? []).length > 0);
+    return withProducts?.name ?? sorted[0]?.name ?? null;
+  }, [sellerMenus]);
+
+  const publicShopUrl = useMemo(
+    () => (seller ? buildPublicShopUrl(buyerShopUrlTemplate, seller.shopCode) : null),
+    [buyerShopUrlTemplate, seller]
+  );
 
   async function patchSeller(patch: Record<string, unknown>) {
     if (!sellerId) return;
@@ -374,6 +436,54 @@ export function SellerDetail() {
     }
   }
 
+  async function onApplyTrialFromAdmin() {
+    if (!sellerId) return;
+    const days = Math.max(1, Math.floor(Number(trialDaysQuick) || 7));
+    setBusy(true);
+    try {
+      await adminPutOnTrial({ sellerId, trialDays: days });
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : "Trial update failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onSetDemoMode() {
+    if (!sellerId) return;
+    if (!window.confirm("Set this seller to demo mode (storefront not live)?")) return;
+    setBusy(true);
+    try {
+      await adminSetDemoMode(sellerId);
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : "Failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onConfirmGoLive() {
+    if (!sellerId) return;
+    const slots = Math.max(1, Math.floor(Number(goLiveSlots) || 1));
+    const recharge = Math.max(0, Number(goLiveRecharge) || 0);
+    setBusy(true);
+    try {
+      await adminGoLive({
+        sellerId,
+        slotsToAdd: slots,
+        rechargeAmount: recharge,
+        notes: "Admin seller detail — go live",
+        startImmediately: true,
+        adminId: admin?.id ?? "",
+      });
+      setGoLiveOpen(false);
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : "Go live failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function saveEdit(e: FormEvent) {
     e.preventDefault();
     if (!editField) return;
@@ -509,6 +619,81 @@ export function SellerDetail() {
           </Button>
         </div>
       </header>
+
+      <Card title="Store overview">
+        <div className="kv-grid">
+          <div className="kv">
+            <div className="kv__k">Operational mode</div>
+            <div className="kv__v">
+              <span className="pill pill--live">{sellerDisplayLabel(cur)}</span>
+              <span className="muted small"> · {sellerOperationalCategory(cur)}</span>
+            </div>
+          </div>
+          <div className="kv">
+            <div className="kv__k">Available balance</div>
+            <div className="kv__v">{formatMoney(Number(cur.currentAvailableBalance ?? cur.walletBalance ?? 0))}</div>
+          </div>
+          <div className="kv">
+            <div className="kv__k">Wallet (billing)</div>
+            <div className="kv__v">{formatMoney(Number(cur.walletBalance ?? 0))}</div>
+          </div>
+          <div className="kv">
+            <div className="kv__k">Primary menu</div>
+            <div className="kv__v">{primaryMenuName ?? "—"}</div>
+          </div>
+          <div className="kv">
+            <div className="kv__k">Catalog items</div>
+            <div className="kv__v">{catalogStats.items} products</div>
+          </div>
+          <div className="kv">
+            <div className="kv__k">Combos</div>
+            <div className="kv__v">{catalogStats.combos}</div>
+          </div>
+          <div className="kv" style={{ gridColumn: "1 / -1" }}>
+            <div className="kv__k">Public shop link</div>
+            <div className="kv__v">
+              {publicShopUrl ? (
+                <div className="public-link-row">
+                  <a className="link-inline" href={publicShopUrl} target="_blank" rel="noreferrer">
+                    {publicShopUrl}
+                  </a>
+                  <Button variant="ghost" className="btn--compact" onClick={() => void navigator.clipboard.writeText(publicShopUrl)}>
+                    Copy
+                  </Button>
+                </div>
+              ) : (
+                <span className="muted small">
+                  Set <span className="mono">buyerShopPublicUrlTemplate</span> in Settings (use {"{shopCode}"}) to show a link here. Shop
+                  code: <span className="mono">{cur.shopCode ?? "—"}</span>
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      <Card title="Lifecycle (trial / live / demo)">
+        <p className="muted small" style={{ marginTop: 0 }}>
+          Trial uses the standard admin trial window. Go live applies the same billing transition as slot purchases (slots + live mode).
+        </p>
+        <div className="split-2" style={{ alignItems: "flex-end" }}>
+          <label className="field" style={{ marginBottom: 0 }}>
+            <span>Trial length (days)</span>
+            <input className="input" value={trialDaysQuick} onChange={(e) => setTrialDaysQuick(e.target.value)} inputMode="numeric" />
+          </label>
+          <div className="btn-row" style={{ justifyContent: "flex-start" }}>
+            <Button variant="trial" disabled={busy} onClick={() => void onApplyTrialFromAdmin()}>
+              Apply trial
+            </Button>
+            <Button variant="live" disabled={busy} onClick={() => setGoLiveOpen(true)}>
+              Go live
+            </Button>
+            <Button variant="ghost" disabled={busy} onClick={() => void onSetDemoMode()}>
+              Set demo
+            </Button>
+          </div>
+        </div>
+      </Card>
 
       <Card title="Seller profile">
         <div className="kv-grid">
@@ -1012,6 +1197,34 @@ export function SellerDetail() {
           </Button>
         </div>
       </Card>
+
+      <Modal
+        open={goLiveOpen}
+        title="Go live"
+        onClose={() => !busy && setGoLiveOpen(false)}
+        footer={
+          <>
+            <Button variant="ghost" disabled={busy} onClick={() => setGoLiveOpen(false)}>
+              Cancel
+            </Button>
+            <Button variant="live" disabled={busy} onClick={() => void onConfirmGoLive()}>
+              Confirm go live
+            </Button>
+          </>
+        }
+      >
+        <p className="muted small" style={{ marginTop: 0 }}>
+          Adds slots, credits optional wallet amount, and activates live billing state (same as the billing “go live” transaction).
+        </p>
+        <label className="field">
+          <span>Slots to add</span>
+          <input className="input" value={goLiveSlots} onChange={(e) => setGoLiveSlots(e.target.value)} inputMode="numeric" />
+        </label>
+        <label className="field">
+          <span>Wallet credit (INR, optional)</span>
+          <input className="input" value={goLiveRecharge} onChange={(e) => setGoLiveRecharge(e.target.value)} inputMode="decimal" />
+        </label>
+      </Modal>
 
       <Modal
         open={slotModal}

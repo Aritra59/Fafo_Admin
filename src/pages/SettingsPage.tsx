@@ -46,6 +46,7 @@ export function SettingsPage() {
   );
   const [maintenanceMode, setMaintenanceMode] = useState(false);
   const [forceCloseOrdering, setForceCloseOrdering] = useState(false);
+  const [buyerShopPublicUrlTemplate, setBuyerShopPublicUrlTemplate] = useState("");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -68,6 +69,7 @@ export function SettingsPage() {
       setAppBannersJson(JSON.stringify(d.appBanners ?? [], null, 2));
       setMaintenanceMode(Boolean(d.maintenanceMode));
       setForceCloseOrdering(Boolean(d.forceCloseOrdering));
+      setBuyerShopPublicUrlTemplate(String(d.buyerShopPublicUrlTemplate ?? ""));
     });
   }, []);
 
@@ -126,6 +128,7 @@ export function SettingsPage() {
           appBanners,
           maintenanceMode,
           forceCloseOrdering,
+          buyerShopPublicUrlTemplate: buyerShopPublicUrlTemplate.trim(),
         },
         { merge: true }
       );
@@ -170,6 +173,18 @@ export function SettingsPage() {
 
       <Card title="Payments &amp; contact">
         <div className="stack max-w-md">
+          <label className="field">
+            <span>Buyer public shop URL template</span>
+            <input
+              className="input"
+              value={buyerShopPublicUrlTemplate}
+              onChange={(e) => setBuyerShopPublicUrlTemplate(e.target.value)}
+              placeholder="https://fafo.app/s/{shopCode}"
+            />
+            <span className="muted small">
+              Include the literal <code className="code">{"{shopCode}"}</code> once. Used on seller detail for copyable public links.
+            </span>
+          </label>
           <label className="field">
             <span>UPI ID (global)</span>
             <input className="input" value={globalUpiId} onChange={(e) => setGlobalUpiId(e.target.value)} placeholder="merchant@upi" />

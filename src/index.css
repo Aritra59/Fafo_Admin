@@ -1,19 +1,19 @@
 :root {
   color-scheme: dark;
-  --bg0: #080a0f;
-  --bg1: #0e1117;
-  --neon: #7dd3fc;
-  --neon2: #818cf8;
+  --bg0: #0a0c10;
+  --bg1: #12151c;
+  --neon: #93c5fd;
+  --neon2: #a5b4fc;
   --text: #e8eaef;
-  --muted: #8b93a7;
+  --muted: #94a3b8;
   --danger: #f87171;
-  --card: rgba(14, 17, 24, 0.92);
-  --border: rgba(255, 255, 255, 0.07);
-  --shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 20px 50px rgba(0, 0, 0, 0.5);
+  --card: rgba(18, 21, 28, 0.96);
+  --border: rgba(255, 255, 255, 0.08);
+  --shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 12px 32px rgba(0, 0, 0, 0.45);
   font-family: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
   background-color: var(--bg0);
-  background-image: radial-gradient(1000px 520px at 12% -8%, rgba(129, 140, 248, 0.12), transparent 55%),
-    radial-gradient(800px 420px at 88% 0%, rgba(125, 211, 252, 0.08), transparent 50%);
+  background-image: radial-gradient(900px 480px at 10% -10%, rgba(99, 102, 241, 0.08), transparent 55%),
+    radial-gradient(700px 400px at 92% 0%, rgba(59, 130, 246, 0.05), transparent 50%);
   color: var(--text);
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
@@ -54,15 +54,14 @@ code.code {
 .shop-code-badge {
   display: inline-block;
   font-family: "JetBrains Mono", ui-monospace, monospace;
-  font-weight: 700;
-  font-size: 0.88rem;
-  letter-spacing: 0.04em;
-  color: var(--neon);
+  font-weight: 600;
+  font-size: 0.85rem;
+  letter-spacing: 0.03em;
+  color: var(--text);
   padding: 0.2rem 0.55rem;
-  border-radius: 8px;
-  border: 1px solid rgba(57, 245, 214, 0.45);
-  background: rgba(57, 245, 214, 0.1);
-  box-shadow: 0 0 12px rgba(57, 245, 214, 0.15);
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .shell {
@@ -102,11 +101,11 @@ code.code {
 }
 
 .logo-dot {
-  width: 12px;
-  height: 12px;
+  width: 10px;
+  height: 10px;
   border-radius: 999px;
-  background: radial-gradient(circle at 30% 30%, #fff, var(--neon));
-  box-shadow: 0 0 18px rgba(57, 245, 214, 0.8);
+  background: linear-gradient(145deg, #93c5fd, #6366f1);
+  box-shadow: none;
 }
 
 .brand-title {
@@ -145,12 +144,12 @@ code.code {
 }
 
 .nav-link--active {
-  border-color: rgba(129, 140, 248, 0.4);
-  background: linear-gradient(90deg, rgba(129, 140, 248, 0.12), rgba(99, 102, 241, 0.08));
+  border-color: rgba(99, 102, 241, 0.35);
+  background: rgba(99, 102, 241, 0.1);
 }
 
 .main {
-  padding: 1rem;
+  padding: 1.25rem 1.5rem;
   min-width: 0;
 }
 
@@ -214,7 +213,7 @@ code.code {
 .neon-card {
   background: var(--card);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 10px;
   box-shadow: var(--shadow);
   backdrop-filter: blur(12px);
 }
@@ -245,9 +244,9 @@ code.code {
 }
 
 .stat-value {
-  font-size: 1.75rem;
-  font-weight: 700;
-  letter-spacing: 0.02em;
+  font-size: 1.5rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
 }
 
 .btn {
@@ -1492,4 +1491,131 @@ code.code {
   50% {
     opacity: 0.35;
   }
+}
+
+.public-link-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.public-link-row .link-inline {
+  word-break: break-all;
+}
+
+.numeric {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.billing-log-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.85rem;
+}
+
+.category-shell__tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 1.25rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.category-tab {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.45rem 0.85rem;
+  border-radius: 8px;
+  font-size: 0.88rem;
+  font-weight: 500;
+  color: var(--muted);
+  text-decoration: none;
+  border: 1px solid transparent;
+}
+
+.category-tab:hover {
+  color: var(--text);
+  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.category-tab--on {
+  color: var(--text);
+  border-color: rgba(99, 102, 241, 0.35);
+  background: rgba(99, 102, 241, 0.1);
+}
+
+.category-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: flex-end;
+  margin-bottom: 0.85rem;
+}
+
+.field--inline-grow {
+  flex: 1 1 220px;
+  min-width: 160px;
+}
+
+.category-checkbox-grid {
+  display: grid;
+  gap: 0.35rem 1rem;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  margin-top: 0.5rem;
+}
+
+.category-checkbox-grid--boxed {
+  padding: 0.75rem;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.category-map__subtitle {
+  margin: 1rem 0 0.5rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.billing-alert-legend {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 0.65rem;
+}
+
+.billing-legend-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  margin-right: 0.35rem;
+  vertical-align: middle;
+}
+
+.billing-legend-dot--danger {
+  background: rgba(248, 113, 113, 0.95);
+}
+
+.billing-legend-dot--warn {
+  background: rgba(251, 191, 36, 0.95);
+}
+
+tr.billing-row--danger td {
+  background: rgba(248, 113, 113, 0.08);
+}
+
+tr.billing-row--warn:not(.billing-row--danger) td {
+  background: rgba(251, 191, 36, 0.07);
+}
+
+.text-warn-strong {
+  color: #fca5a5;
+  font-weight: 700;
 }

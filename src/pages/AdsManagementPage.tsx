@@ -64,6 +64,20 @@ function readPlacementDashboard(ad: FafoAd): boolean {
   return false;
 }
 
+function readPlacementBuyerExplore(ad: FafoAd): boolean {
+  if (typeof ad.placementBuyerExplore === "boolean") return ad.placementBuyerExplore;
+  if (ad.placements?.includes("buyer_explore")) return true;
+  if (ad.placement === "buyer_explore") return true;
+  return false;
+}
+
+function readPlacementBuyerShop(ad: FafoAd): boolean {
+  if (typeof ad.placementBuyerShop === "boolean") return ad.placementBuyerShop;
+  if (ad.placements?.includes("buyer_shop")) return true;
+  if (ad.placement === "buyer_shop") return true;
+  return false;
+}
+
 function readBannerDashboard(ad: FafoAd): string {
   const u = (ad.bannerUrlDashboard ?? "").trim();
   if (u) return u;
@@ -82,6 +96,18 @@ function readBannerHome(ad: FafoAd): string {
   return "";
 }
 
+function readBannerBuyerExplore(ad: FafoAd): string {
+  const u = (ad.bannerUrlBuyerExplore ?? "").trim();
+  if (u) return u;
+  return "";
+}
+
+function readBannerBuyerShop(ad: FafoAd): string {
+  const u = (ad.bannerUrlBuyerShop ?? "").trim();
+  if (u) return u;
+  return "";
+}
+
 function readTargetSellerId(ad: FafoAd): { all: boolean; id: string } {
   const raw = (ad.targetSellerId ?? "").trim();
   if (raw === "all" || raw === "") {
@@ -96,17 +122,22 @@ function readTargetSellerId(ad: FafoAd): { all: boolean; id: string } {
 function listPreviewImages(ad: FafoAd): string[] {
   const a = readBannerDashboard(ad);
   const b = readBannerHome(ad);
-  return [a, b].filter(Boolean);
+  const c = readBannerBuyerExplore(ad);
+  const d = readBannerBuyerShop(ad);
+  return [a, b, c, d].filter(Boolean);
 }
 
 function placementSummary(ad: FafoAd): string {
   const h = readPlacementHome(ad);
   const d = readPlacementDashboard(ad);
+  const be = readPlacementBuyerExplore(ad);
+  const bs = readPlacementBuyerShop(ad);
   const bits: string[] = [];
-  if (d) bits.push("Dashboard");
-  if (h) bits.push("Home");
+  if (d) bits.push("Seller dashboard");
+  if (h) bits.push("Seller home");
+  if (be) bits.push("Buyer explore");
+  if (bs) bits.push("Buyer shop");
   if (bits.length) return bits.join(" · ");
-  if (ad.placement === "buyer_explore" || ad.placements?.includes("buyer_explore")) return "Buyer explore (legacy)";
   return "—";
 }
 
@@ -145,12 +176,18 @@ export function AdsManagementPage() {
   const [endInput, setEndInput] = useState("");
   const [placementHome, setPlacementHome] = useState(false);
   const [placementDashboard, setPlacementDashboard] = useState(true);
+  const [placementBuyerExplore, setPlacementBuyerExplore] = useState(false);
+  const [placementBuyerShop, setPlacementBuyerShop] = useState(false);
   const [targetAllSellers, setTargetAllSellers] = useState(true);
   const [specificSellerId, setSpecificSellerId] = useState("");
   const [bannerUrlDashboard, setBannerUrlDashboard] = useState("");
   const [bannerUrlHome, setBannerUrlHome] = useState("");
+  const [bannerUrlBuyerExplore, setBannerUrlBuyerExplore] = useState("");
+  const [bannerUrlBuyerShop, setBannerUrlBuyerShop] = useState("");
   const [pendingDashboardFile, setPendingDashboardFile] = useState<File | null>(null);
   const [pendingHomeFile, setPendingHomeFile] = useState<File | null>(null);
+  const [pendingBuyerExploreFile, setPendingBuyerExploreFile] = useState<File | null>(null);
+  const [pendingBuyerShopFile, setPendingBuyerShopFile] = useState<File | null>(null);
 
   const [sellerSearch, setSellerSearch] = useState("");
   const [sellerFilter, setSellerFilter] = useState<SellerFilter>("all");
@@ -260,12 +297,18 @@ export function AdsManagementPage() {
     setEndInput(`${end.getFullYear()}-${p(end.getMonth() + 1)}-${p(end.getDate())}T${p(end.getHours())}:${p(end.getMinutes())}`);
     setPlacementHome(false);
     setPlacementDashboard(true);
+    setPlacementBuyerExplore(false);
+    setPlacementBuyerShop(false);
     setTargetAllSellers(true);
     setSpecificSellerId("");
     setBannerUrlDashboard("");
     setBannerUrlHome("");
+    setBannerUrlBuyerExplore("");
+    setBannerUrlBuyerShop("");
     setPendingDashboardFile(null);
     setPendingHomeFile(null);
+    setPendingBuyerExploreFile(null);
+    setPendingBuyerShopFile(null);
     setSellerSearch("");
     setSellerFilter("all");
     setCityFilter("");
@@ -285,13 +328,19 @@ export function AdsManagementPage() {
     setEndInput(inputFromTs(ad.endAt));
     setPlacementHome(readPlacementHome(ad));
     setPlacementDashboard(readPlacementDashboard(ad));
+    setPlacementBuyerExplore(readPlacementBuyerExplore(ad));
+    setPlacementBuyerShop(readPlacementBuyerShop(ad));
     const tgt = readTargetSellerId(ad);
     setTargetAllSellers(tgt.all);
     setSpecificSellerId(tgt.id);
     setBannerUrlDashboard(readBannerDashboard(ad));
     setBannerUrlHome(readBannerHome(ad));
+    setBannerUrlBuyerExplore(readBannerBuyerExplore(ad));
+    setBannerUrlBuyerShop(readBannerBuyerShop(ad));
     setPendingDashboardFile(null);
     setPendingHomeFile(null);
+    setPendingBuyerExploreFile(null);
+    setPendingBuyerShopFile(null);
     setSellerSearch("");
     setSellerFilter("all");
     setCityFilter("");
@@ -308,7 +357,14 @@ export function AdsManagementPage() {
 
   async function deleteAllStorageForAd(ad: FafoAd) {
     const urls = new Set<string>();
-    for (const u of [ad.bannerUrlDashboard, ad.bannerUrlHome, ad.bannerImageUrl, ...(ad.bannerUrls ?? [])]) {
+    for (const u of [
+      ad.bannerUrlDashboard,
+      ad.bannerUrlHome,
+      ad.bannerUrlBuyerExplore,
+      ad.bannerUrlBuyerShop,
+      ad.bannerImageUrl,
+      ...(ad.bannerUrls ?? []),
+    ]) {
       const t = (u ?? "").trim();
       if (t) urls.add(t);
     }
@@ -343,8 +399,10 @@ export function AdsManagementPage() {
 
     const ph = Boolean(placementHome);
     const pd = Boolean(placementDashboard);
-    if (!ph && !pd) {
-      setErr("Select at least one placement: Seller Dashboard and/or Seller Home.");
+    const pbe = Boolean(placementBuyerExplore);
+    const pbs = Boolean(placementBuyerShop);
+    if (!ph && !pd && !pbe && !pbs) {
+      setErr("Select at least one placement (seller dashboard, seller home, buyer explore, or buyer shop).");
       return;
     }
 
@@ -367,6 +425,8 @@ export function AdsManagementPage() {
 
     let dashUrl = bannerUrlDashboard.trim();
     let homeUrl = bannerUrlHome.trim();
+    let exploreUrl = bannerUrlBuyerExplore.trim();
+    let shopUrl = bannerUrlBuyerShop.trim();
 
     if (pd && !dashUrl && !pendingDashboardFile) {
       setErr("Dashboard placement requires a dashboard banner image.");
@@ -374,6 +434,14 @@ export function AdsManagementPage() {
     }
     if (ph && !homeUrl && !pendingHomeFile) {
       setErr("Home placement requires a home banner image.");
+      return;
+    }
+    if (pbe && !exploreUrl && !pendingBuyerExploreFile) {
+      setErr("Buyer explore placement requires a banner image.");
+      return;
+    }
+    if (pbs && !shopUrl && !pendingBuyerShopFile) {
+      setErr("Buyer shop placement requires a banner image.");
       return;
     }
 
@@ -395,6 +463,13 @@ export function AdsManagementPage() {
 
       if (pendingDashboardFile) dashUrl = await uploadAsset(adId, pendingDashboardFile);
       if (pendingHomeFile) homeUrl = await uploadAsset(adId, pendingHomeFile);
+      if (pendingBuyerExploreFile) exploreUrl = await uploadAsset(adId, pendingBuyerExploreFile);
+      if (pendingBuyerShopFile) shopUrl = await uploadAsset(adId, pendingBuyerShopFile);
+
+      if (!pbe) exploreUrl = "";
+      if (!pbs) shopUrl = "";
+      if (!pd) dashUrl = "";
+      if (!ph) homeUrl = "";
 
       const st = subtitle.trim();
 
@@ -404,8 +479,12 @@ export function AdsManagementPage() {
         ctaLink: ctaLink.trim(),
         placementDashboard: pd,
         placementHome: ph,
+        placementBuyerExplore: pbe,
+        placementBuyerShop: pbs,
         bannerUrlDashboard: dashUrl,
         bannerUrlHome: homeUrl,
+        bannerUrlBuyerExplore: exploreUrl,
+        bannerUrlBuyerShop: shopUrl,
         targetSellerId,
         priority: pri,
         startAt,
@@ -446,8 +525,12 @@ export function AdsManagementPage() {
         ctaLink: ctaLink.trim(),
         placementDashboard: pd,
         placementHome: ph,
+        placementBuyerExplore: pbe,
+        placementBuyerShop: pbs,
         bannerUrlDashboard: dashUrl,
         bannerUrlHome: homeUrl,
+        bannerUrlBuyerExplore: exploreUrl,
+        bannerUrlBuyerShop: shopUrl,
         targetSellerId,
         priority: pri,
         startAt: startAt.toDate().toISOString(),
@@ -470,8 +553,11 @@ export function AdsManagementPage() {
       <header className="page-head page-head--split">
         <div>
           <p className="page-kicker">Marketing</p>
-          <h1 className="page-title">Seller ads</h1>
-          <p className="page-lead muted">Campaigns for seller dashboard and seller home. Saved in a normalized shape the seller app can read.</p>
+          <h1 className="page-title">Ads</h1>
+          <p className="page-lead muted">
+            Campaigns for seller surfaces and buyer explore / shop. Images and dates are stored on each ad; targeting uses seller id or
+            all sellers.
+          </p>
         </div>
         <div className="btn-row">
           <Button type="button" onClick={() => openCreate()} disabled={busy}>
@@ -576,7 +662,7 @@ export function AdsManagementPage() {
 
       <Modal
         open={modalOpen}
-        title={modalMode === "create" ? "New seller ad" : "Edit seller ad"}
+        title={modalMode === "create" ? "New ad campaign" : "Edit ad campaign"}
         onClose={() => !busy && setModalOpen(false)}
         footer={
           <>
@@ -632,7 +718,15 @@ export function AdsManagementPage() {
             </label>
             <label className="field field--inline">
               <input type="checkbox" checked={placementHome} onChange={(e) => setPlacementHome(e.target.checked)} />
-              <span>Seller home</span>
+              <span>Seller landing / home</span>
+            </label>
+            <label className="field field--inline">
+              <input type="checkbox" checked={placementBuyerExplore} onChange={(e) => setPlacementBuyerExplore(e.target.checked)} />
+              <span>Buyer explore</span>
+            </label>
+            <label className="field field--inline">
+              <input type="checkbox" checked={placementBuyerShop} onChange={(e) => setPlacementBuyerShop(e.target.checked)} />
+              <span>Buyer shop page</span>
             </label>
           </fieldset>
 
@@ -675,6 +769,46 @@ export function AdsManagementPage() {
               ) : bannerUrlHome ? (
                 <div className="ads-form-preview">
                   <img src={bannerUrlHome} alt="" />
+                </div>
+              ) : null}
+            </label>
+            <label className="field field--compact">
+              <span>Buyer explore banner</span>
+              <input
+                type="file"
+                accept="image/*"
+                className="input"
+                onChange={(e) => {
+                  const f = e.target.files?.[0] ?? null;
+                  setPendingBuyerExploreFile(f);
+                  e.target.value = "";
+                }}
+              />
+              {pendingBuyerExploreFile ? (
+                <span className="muted small">New file: {pendingBuyerExploreFile.name}</span>
+              ) : bannerUrlBuyerExplore ? (
+                <div className="ads-form-preview">
+                  <img src={bannerUrlBuyerExplore} alt="" />
+                </div>
+              ) : null}
+            </label>
+            <label className="field field--compact">
+              <span>Buyer shop banner</span>
+              <input
+                type="file"
+                accept="image/*"
+                className="input"
+                onChange={(e) => {
+                  const f = e.target.files?.[0] ?? null;
+                  setPendingBuyerShopFile(f);
+                  e.target.value = "";
+                }}
+              />
+              {pendingBuyerShopFile ? (
+                <span className="muted small">New file: {pendingBuyerShopFile.name}</span>
+              ) : bannerUrlBuyerShop ? (
+                <div className="ads-form-preview">
+                  <img src={bannerUrlBuyerShop} alt="" />
                 </div>
               ) : null}
             </label>

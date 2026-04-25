@@ -1,4 +1,4 @@
-import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes, useParams } from "react-router-dom";
 import { AdminSessionProvider } from "./contexts/AdminSessionContext";
 import { InstallPromptBanner } from "./components/InstallPromptBanner";
 import { ProtectedRoute } from "./components/ProtectedRoute";
@@ -16,10 +16,19 @@ import { SettingsPage } from "./pages/SettingsPage";
 import { AnalyticsPage } from "./pages/AnalyticsPage";
 import { StoragePage } from "./pages/StoragePage";
 import { AdsManagementPage } from "./pages/AdsManagementPage";
+import { CategoriesLayout } from "./pages/categories/CategoriesLayout";
+import { CategoryLinkingPage } from "./pages/categories/CategoryLinkingPage";
+import { GlobalCuisineCategoriesPage } from "./pages/categories/GlobalCuisineCategoriesPage";
+import { GlobalMenuCategoriesPage } from "./pages/categories/GlobalMenuCategoriesPage";
 import { CreateSeller } from "./pages/CreateSeller";
 import { CreateBuyer } from "./pages/CreateBuyer";
 import { SellerDetail } from "./pages/SellerDetail";
 import { BuyerDetail } from "./pages/BuyerDetail";
+
+function LegacyCuisineCategoriesRedirect() {
+  const { appName } = useParams();
+  return <Navigate to={`/admin/${appName ?? "fafo"}/categories/cuisine`} replace />;
+}
 
 export default function App() {
   return (
@@ -57,6 +66,13 @@ export default function App() {
             <Route path="billing" element={<BillingPage />} />
             <Route path="analytics" element={<AnalyticsPage />} />
             <Route path="ads" element={<AdsManagementPage />} />
+            <Route path="cuisine-categories" element={<LegacyCuisineCategoriesRedirect />} />
+            <Route path="categories" element={<CategoriesLayout />}>
+              <Route index element={<Navigate to="cuisine" replace />} />
+              <Route path="cuisine" element={<GlobalCuisineCategoriesPage />} />
+              <Route path="menu" element={<GlobalMenuCategoriesPage />} />
+              <Route path="linking" element={<CategoryLinkingPage />} />
+            </Route>
             <Route path="templates" element={<TemplatesPage />} />
             <Route path="settings" element={<SettingsPage />} />
             <Route path="storage" element={<StoragePage />} />

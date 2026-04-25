@@ -1,4 +1,4 @@
-import { NavLink, Outlet, useParams } from "react-router-dom";
+import { NavLink, Outlet, useLocation, useParams } from "react-router-dom";
 import { useAdminSession } from "../contexts/AdminSessionContext";
 import { Button } from "./Button";
 
@@ -10,6 +10,7 @@ const links: { to: string; label: string; end?: boolean }[] = [
   { to: "billing", label: "Billing / Slots" },
   { to: "analytics", label: "Analytics" },
   { to: "ads", label: "Ads management" },
+  { to: "categories/cuisine", label: "Categories" },
   { to: "storage", label: "Storage" },
   { to: "templates", label: "Templates" },
   { to: "settings", label: "Settings" },
@@ -17,9 +18,11 @@ const links: { to: string; label: string; end?: boolean }[] = [
 
 export function AdminLayout() {
   const { appName } = useParams();
+  const location = useLocation();
   const { admin, logout } = useAdminSession();
   const base = `/admin/${appName ?? "fafo"}`;
   const showSuper = admin?.role === "super_admin";
+  const categoriesSectionActive = location.pathname.includes("/categories");
 
   return (
     <div className="shell">
@@ -34,12 +37,16 @@ export function AdminLayout() {
         <nav className="sidebar__nav">
           {links.map((l) => {
             const href = l.to ? `${base}/${l.to}` : base;
+            const categoriesNav = l.to === "categories/cuisine";
             return (
               <NavLink
                 key={href}
                 to={href}
                 end={l.end}
-                className={({ isActive }) => `nav-link${isActive ? " nav-link--active" : ""}`}
+                className={({ isActive }) => {
+                  const on = categoriesNav ? categoriesSectionActive : isActive;
+                  return `nav-link${on ? " nav-link--active" : ""}`;
+                }}
               >
                 {l.label}
               </NavLink>
